@@ -100,6 +100,7 @@
 <div id="hint">Nexus · the read-write web · <a href="../../../">↑ root</a></div>
 
 <script src="https://unpkg.com/xlogin"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@4.2.12/marked.min.js"></script>
 <script>
 // Nexus - a faithful recreation of Tim Berners-Lee's 1990 WorldWideWeb browser
 // (the NeXT app, later renamed "Nexus"), as a window manager over YOUR pod.
@@ -210,15 +211,21 @@ function loadResource(w, url){
     w.docEl.classList.remove("loading");
     if(!res.ok){
       if(res.status===404 && me()){   // offer to create a new document here (the read-write web)
-        var tmpl="<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>"+esc(shortTitle(url))+"</title></head>\n<body>\n<h1>"+esc(shortTitle(url))+"</h1>\n<p>New document.</p>\n</body></html>\n";
-        renderHTML(w, tmpl, url);
+        if(isMarkdown(url,"")){
+          renderMarkdown(w, "# "+shortTitle(url).replace(/\.(md|markdown)$/i,"")+"\n\n", url);
+        } else {
+          var tmpl="<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>"+esc(shortTitle(url))+"</title></head>\n<body>\n<h1>"+esc(shortTitle(url))+"</h1>\n<p>New document.</p>\n</body></html>\n";
+          renderHTML(w, tmpl, url);
+        }
         var note=document.createElement("p"); note.style.cssText="color:#777;font-style:italic";
         note.textContent="This document doesn’t exist yet — click Edit, then Save to create it on your pod.";
         w.docEl.appendChild(note); return;
       }
       w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this document.</p>'; w.kind=null; setEditUI(w); return;
     }
-    if(/text\/html|xhtml|xml/.test(res.ct) || /^\s*<(!doctype|html|head|body|h1|p|ul)/i.test(res.body)){
+    if(isMarkdown(url, res.ct)){
+      renderMarkdown(w, res.body, url);   // .md pages (the pages-app convention) -> WWW-styled, [[wikilinks]] live
+    } else if(/text\/html|xhtml|xml/.test(res.ct) || /^\s*<(!doctype|html|head|body|h1|p|ul)/i.test(res.body)){
       renderHTML(w, res.body, url);
     } else {
       renderSource(w, url, res.body, res.ct);   // data resource (turtle/json-ld/text) — source, with links live
@@ -300,6 +307,36 @@ function renderSource(w, url, body, ct){
 }
 function shortTitle(url){ try{ var u=new URL(url); var p=u.pathname.replace(/\/$/,"").split("/").pop(); return p||u.hostname; }catch(e){ return url; } }
 
+// ---- markdown pages (the pages-app convention: <name>.md, [[wiki links]]) ----
+function isMarkdown(url, ct){ var path=(url||"").split(/[?#]/)[0]; return /\.(md|markdown)$/i.test(path) || /markdown/.test(ct||""); }
+function dirOf(url){ try{ return new URL(".", url.split(/[?#]/)[0]).href; }catch(e){ return url; } }
+function wikiToMd(md, baseUrl){   // [[Name]] / [[Name|label]] -> a markdown link to the sibling .md page
+  var dir=dirOf(baseUrl);
+  return String(md).replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, function(_, name, label){
+    var n=name.trim(), target; try{ target=new URL(encodeURIComponent(n)+".md", dir).href; }catch(e){ target=encodeURIComponent(n)+".md"; }
+    return "["+(label||n)+"]("+target+")";
+  });
+}
+function renderMarkdown(w, md, url){
+  w.kind="markdown"; w.raw=md; w.sourceCT="text/markdown";
+  if(typeof marked==="undefined"){ renderSource(w, url, md, "text/markdown"); w.kind="markdown"; return; }
+  var html; try{ html=marked.parse(wikiToMd(md, url)); }catch(e){ renderSource(w, url, md, "text/markdown"); w.kind="markdown"; return; }
+  var doc; try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ doc=null; }
+  if(doc){
+    doc.querySelectorAll("script,style,iframe,object,embed").forEach(function(n){ n.remove(); });
+    doc.querySelectorAll("a[href]").forEach(function(a){ try{ a.setAttribute("href", new URL(a.getAttribute("href"), url).href); }catch(e){} });
+    doc.querySelectorAll("img[src]").forEach(function(im){ try{ im.setAttribute("src", new URL(im.getAttribute("src"), url).href); }catch(e){} });
+    var h1=doc.querySelector("h1");
+    w.titleEl.textContent=(h1&&h1.textContent.trim())||shortTitle(url);
+    html=doc.body?doc.body.innerHTML:html;
+  } else { w.titleEl.textContent=shortTitle(url); }
+  w.docEl.innerHTML=html;
+  w.docEl.querySelectorAll("a[href]").forEach(function(a){
+    a.addEventListener("click",function(e){ if(w.mode==="edit")return; e.preventDefault(); navigate(w, a.getAttribute("href")); });
+  });
+  w.docEl.scrollTop=0; setEditUI(w);
+}
+
 function renderHTML(w, html, base){
   w.kind="html"; w.raw=html;   // keep the original source so Save can preserve <head>
   var doc;
@@ -341,6 +378,7 @@ function renderAbout(w){
     '<ul>'+
       '<li>On any HTML document you can write to, hit <b>Edit</b> (or ⌘E), change the text, then <b>Save</b> — it\'s written straight back to your pod.</li>'+
       '<li>Open a URL that doesn\'t exist yet on your pod and nexus offers to <b>create</b> it.</li>'+
+      '<li><b>Markdown</b> pages (<code>.md</code>, like the <i>pages</i> app) render in the WWW style — <code>[[wiki links]]</code> become clickable boxed links; Edit drops to the raw markdown, Save writes it back. Click a missing <code>[[link]]</code> to create that page.</li>'+
       '<li>Data resources (Turtle, JSON-LD) are editable as source too.</li>'+
     '</ul>'+
     '<h2>Making links by hand</h2>'+
@@ -360,15 +398,15 @@ function renderAbout(w){
 
 // ---- edit in place + save to the pod (the read-write turn) ----
 function setEditUI(w){
-  var editable=(w.kind==="html"||w.kind==="source");
+  var editable=(w.kind==="html"||w.kind==="source"||w.kind==="markdown");
   if(w.editB){ w.editB.style.display=(w.mode==="edit")?"none":""; w.editB.disabled=!editable; }
   if(w.saveB) w.saveB.style.display=(w.mode==="edit")?"":"none";
   if(w.revertB) w.revertB.style.display=(w.mode==="edit")?"":"none";
   w.docEl.classList.toggle("editing", w.mode==="edit");
 }
 function enterEdit(w){
-  if(!(w.kind==="html"||w.kind==="source"))return;
-  if(w.kind==="source"){   // plain editable text surface (no live links while editing)
+  if(!(w.kind==="html"||w.kind==="source"||w.kind==="markdown"))return;
+  if(w.kind==="source"||w.kind==="markdown"){   // edit the raw text/markdown source
     var pre=document.createElement("pre");
     pre.style.cssText="font-family:NeXTMono,Courier,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;";
     pre.textContent=w.raw||""; w.docEl.innerHTML=""; w.docEl.appendChild(pre);
@@ -394,7 +432,7 @@ function saveDoc(w){
     btn.disabled=false; btn.textContent=old;
     if(!r.ok){ flashTitle(w,(r.status===403||r.status===401)?"No write access":("Save failed "+r.status)); return; }
     w.mode="view"; w.docEl.contentEditable="false"; w.raw=body;
-    if(w.kind==="html") renderHTML(w, body, w.url); else renderSource(w, w.url, body, ct);
+    if(w.kind==="html") renderHTML(w, body, w.url); else if(w.kind==="markdown") renderMarkdown(w, body, w.url); else renderSource(w, w.url, body, ct);
     flashTitle(w,"Saved ✓");
   }).catch(function(){ btn.disabled=false; btn.textContent=old; flashTitle(w,"Save failed (network)"); });
 }

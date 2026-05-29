@@ -52,6 +52,15 @@ The read-write turn. On any HTML document you can write to:
 Editing strips page scripts from the rendered body (nexus draws documents, not
 apps); the saved file keeps its original `<head>`. Use it for prose/pages.
 
+### Markdown & wiki links
+
+`.md` pages (the [`pages`](https://github.com/solid-apps/pages) app's convention:
+`<name>.md` under `/public/pages/`) render in the WWW style via `marked` — headings
+in the NeXT fonts, links boxed. `[[Name]]` / `[[Name|label]]` become clickable
+links to the sibling `<Name>.md`; click a missing one and nexus offers to create
+it (wiki-style). **Edit** drops to the raw markdown source; **Save** writes it back
+as `text/markdown`. So nexus is a faithful viewer *and* editor for your pages/wiki.
+
 ## Phase 3 (this) — make links by hand
 
 The signature WorldWideWeb move, the thing that made it a read-*write* web:
