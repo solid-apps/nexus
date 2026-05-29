@@ -25,7 +25,11 @@ bringing back, so `nexus` is built to grow into the real thing, in phases.
   in true WorldWideWeb style.
 - **Click boxed links** to follow them; **&lt;** / **&gt;** walk your history.
 - **New** spawns another window; drag title bars to move, drag the corner to size.
-- HTML renders faithfully; other resources (Turtle, JSON-LD, text) show as source.
+- **Containers are clickable** — a pod folder (any URL ending `/`) renders as a
+  WWW-style index of boxed links (sorted folders-first, with size/date), so you
+  click through your pod like hypertext. `../` walks up.
+- HTML renders faithfully; data resources (Turtle, JSON-LD, text) show as source —
+  but every URL in them is a live link, so the whole pod stays click-through.
 - Scripts/styles in fetched pages are stripped — nexus draws the document, the
   page can't take over the chrome.
 

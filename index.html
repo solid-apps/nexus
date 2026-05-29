@@ -178,6 +178,13 @@ function load(w, url){
   if(url==="#about"){ renderAbout(w); w.url=url; setNavButtons(w); return; }
   w.url=url; w.urlEl.value=url; setNavButtons(w);
   w.docEl.classList.add("loading"); w.docEl.textContent="Reading "+url+" …"; w.titleEl.textContent="…";
+  // In Solid, a container URL always ends in "/" — browse it as a clickable index.
+  if(/\/$/.test(url.split(/[?#]/)[0])) loadContainer(w, url); else loadResource(w, url);
+}
+function unreachable(w){ w.docEl.classList.remove("loading"); w.titleEl.textContent="Unreachable";
+  w.docEl.innerHTML='<h1>Unreachable</h1><p>Could not fetch this URL. If it\'s on another server it may block cross-origin reads (CORS). Your own pod works.</p>'; }
+
+function loadResource(w, url){
   authFetch(url,{headers:{Accept:"text/html,application/xhtml+xml,*/*"}}).then(function(r){
     var ct=(r.headers.get("content-type")||"").toLowerCase();
     return r.text().then(function(body){ return { ok:r.ok, status:r.status, ct:ct, body:body }; });
@@ -187,15 +194,79 @@ function load(w, url){
     if(/text\/html|xhtml|xml/.test(res.ct) || /^\s*<(!doctype|html|head|body|h1|p|ul)/i.test(res.body)){
       renderHTML(w, res.body, url);
     } else {
-      // non-HTML (turtle, json-ld, text) — show as monospace source, faithful to "view document"
-      w.titleEl.textContent=shortTitle(url);
-      var pre=document.createElement("pre"); pre.style.cssText="font-family:NeXTMono,Courier,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;";
-      pre.textContent=res.body; w.docEl.innerHTML=""; w.docEl.appendChild(pre);
+      renderSource(w, url, res.body);   // data resource (turtle/json-ld/text) — source, with links live
     }
-  }).catch(function(){
-    w.docEl.classList.remove("loading"); w.titleEl.textContent="Unreachable";
-    w.docEl.innerHTML='<h1>Unreachable</h1><p>Could not fetch this URL. If it\'s on another server it may block cross-origin reads (CORS). Your own pod works.</p>';
+  }).catch(function(){ unreachable(w); });
+}
+
+// ---- LDP container -> clickable WWW-style index ----
+function loadContainer(w, url){
+  authFetch(url,{headers:{Accept:"application/ld+json"}}).then(function(r){
+    return r.text().then(function(body){ return { ok:r.ok, status:r.status, body:body }; });
+  }).then(function(res){
+    w.docEl.classList.remove("loading");
+    if(!res.ok){ w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this container.</p>'; return; }
+    var data=tryJSON(res.body), items=data?containerChildren(data,url):null;
+    if(items) renderContainer(w, url, items); else renderSource(w, url, res.body);
+  }).catch(function(){ unreachable(w); });
+}
+function tryJSON(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
+function jsubjects(d){ if(!d)return[]; if(Array.isArray(d))return d; if(Array.isArray(d["@graph"]))return d["@graph"]; return [d]; }
+function jid(v){ if(v==null)return null; if(typeof v==="string")return v; if(Array.isArray(v))return v.length?jid(v[0]):null; return v["@id"]||null; }
+function jval(v){ if(v==null)return null; if(typeof v!=="object")return v; if(Array.isArray(v))return v.length?jval(v[0]):null; return v["@value"]!=null?v["@value"]:null; }
+function jtypes(n){ var t=n["@type"]||n["a"]; t=Array.isArray(t)?t:(t?[t]:[]); return t.map(function(x){return String(jid(x)||x);}); }
+function isContainerType(n){ return jtypes(n).some(function(t){return /Container$/.test(t);}); }
+function childName(id, base){ var n=id; try{ if(id.indexOf(base)===0) n=id.slice(base.length); else { var u=new URL(id); n=u.pathname.replace(/\/$/,"").split("/").pop()+(/\/$/.test(id)?"/":""); } }catch(e){} return n||id; }
+function parentUrl(url){ try{ var u=new URL(url); if(u.pathname==="/"||u.pathname==="")return null; var parts=u.pathname.replace(/\/$/,"").split("/"); parts.pop(); return u.origin+(parts.join("/")||"")+"/"; }catch(e){ return null; } }
+function containerChildren(data, url){
+  var subs=jsubjects(data), byId={}, entries=[], seen={};
+  subs.forEach(function(n){ var id=jid(n["@id"]); if(id)byId[id]=n; });
+  subs.forEach(function(n){
+    var c=n["contains"]||n["ldp:contains"]||n["http://www.w3.org/ns/ldp#contains"];
+    if(c){ (Array.isArray(c)?c:[c]).forEach(function(x){ var id=jid(x); if(id&&!seen[id]){ seen[id]=1;
+      entries.push({ id:id, node:(x&&typeof x==="object"&&!Array.isArray(x))?x:null }); } }); }
   });
+  if(!entries.length && !subs.some(isContainerType)) return null;   // not a container doc -> caller shows source
+  return entries.map(function(e){
+    var n=Object.assign({}, byId[e.id]||{}, e.node||{});   // metadata may be inline in contains OR a separate subject
+    var size=jval(n["stat:size"]||n["http://www.w3.org/ns/posix/stat#size"]);
+    var mod=jval(n["dcterms:modified"]||n["dct:modified"]||n["http://purl.org/dc/terms/modified"]);
+    return { url:e.id, name:childName(e.id,url), isC:(/\/$/.test(e.id)||isContainerType(n)), size:size, mod:mod };
+  }).sort(function(a,b){ if(a.isC!==b.isC)return a.isC?-1:1; return a.name<b.name?-1:1; });
+}
+function fmtSize(b){ b=+b; if(!b&&b!==0)return ""; if(b<1024)return b+" B"; if(b<1048576)return (b/1024).toFixed(1)+" KB"; return (b/1048576).toFixed(1)+" MB"; }
+function renderContainer(w, url, items){
+  var name=childName(url.replace(/\/$/,"")+"/", parentUrl(url)||url)||shortTitle(url);
+  w.titleEl.textContent=name||"Index";
+  var parent=parentUrl(url);
+  var rows=items.map(function(it){
+    var meta=[it.isC?"folder":fmtSize(it.size), it.mod?String(it.mod).slice(0,10):""].filter(Boolean).join(" · ");
+    return '<li><a href="'+esc(it.url)+'">'+esc(it.name)+(it.isC&&!/\/$/.test(it.name)?"/":"")+'</a>'+(meta?' <span style="color:#777;font-size:11px">'+esc(meta)+'</span>':"")+'</li>';
+  }).join("");
+  w.docEl.innerHTML=
+    '<h2>'+esc(name||"Index")+'</h2>'+
+    '<address>'+esc(url)+'</address>'+
+    (parent?'<p><a href="'+esc(parent)+'">../ (parent)</a></p>':"")+
+    (items.length?'<ul>'+rows+'</ul>':'<p><i>Empty container.</i></p>');
+  w.docEl.querySelectorAll("a[href]").forEach(function(a){
+    a.addEventListener("click",function(e){ e.preventDefault(); navigate(w, a.getAttribute("href")); });
+  });
+  w.docEl.scrollTop=0;
+}
+
+// data resource as source, but with any URLs live (the whole pod stays click-through)
+function linkifySource(text){
+  var re=/(https?:\/\/[^\s"'<>\\]+)/g, out="", last=0, m;
+  while((m=re.exec(text))){ out+=esc(text.slice(last,m.index))+'<a href="'+esc(m[1])+'">'+esc(m[1])+'</a>'; last=re.lastIndex; }
+  return out+esc(text.slice(last));
+}
+function renderSource(w, url, body){
+  w.titleEl.textContent=shortTitle(url);
+  w.docEl.innerHTML='<pre style="font-family:NeXTMono,Courier,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;">'+linkifySource(body)+'</pre>';
+  w.docEl.querySelectorAll("a[href]").forEach(function(a){
+    a.addEventListener("click",function(e){ e.preventDefault(); navigate(w, a.getAttribute("href")); });
+  });
+  w.docEl.scrollTop=0;
 }
 function shortTitle(url){ try{ var u=new URL(url); var p=u.pathname.replace(/\/$/,"").split("/").pop(); return p||u.hostname; }catch(e){ return url; } }
 
