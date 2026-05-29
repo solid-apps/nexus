@@ -35,10 +35,25 @@ bringing back, so `nexus` is built to grow into the real thing, in phases.
 
 Cross-origin pages may refuse reads (CORS); **your own pod always works**.
 
+## Phase 2 (this) — edit in place & save
+
+The read-write turn. On any HTML document you can write to:
+
+- Hit **Edit** (or ⌘E) — the document becomes editable right in the window; change
+  the text, headings, anything.
+- **Save** (⌘S) writes it **straight back to your pod** (`PUT`). The original
+  `<head>`/`<title>` is preserved; your edited body is swapped in.
+- **Revert** discards and reloads. A `403`/`401` is reported as *no write access*.
+- Open a URL that **doesn't exist yet** on your pod → nexus offers to **create**
+  it (edit a blank page, Save to bring it into being).
+- Data resources (Turtle, JSON-LD, text) are editable **as source** and saved with
+  their original content type.
+
+Editing strips page scripts from the rendered body (nexus draws documents, not
+apps); the saved file keeps its original `<head>`. Use it for prose/pages.
+
 ## Later phases
 
-- **P2 — edit in place**: make the document `contentEditable` and **save back to
-  the pod** (PUT). The read-write turn.
 - **P3 — mark → link**: the original's signature move — *mark* a selection,
   navigate elsewhere, **Link to marked**, and nexus writes the anchor and saves.
   Authoring hypertext by hand, on your pod.

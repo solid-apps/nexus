@@ -56,6 +56,8 @@
 
   .doc{ flex:1; overflow:auto; background:var(--win); padding:10px 14px; user-select:text; }
   .doc.loading{ color:#777; font-style:italic; }
+  .doc.editing{ background:#fffbe6; outline:2px solid #5e8585; outline-offset:-2px; cursor:text; }
+  .toolbar .b-save{ background:linear-gradient(#bfe3c7,#8fce9f); }
 
   .resize{ position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:nwse-resize;
            background:linear-gradient(135deg,transparent 45%,var(--chrome-d) 45% 55%,transparent 55%); }
@@ -87,7 +89,7 @@
   <div class="mitem" id="m-open">Open…<span class="k">⌘O</span></div>
   <div class="mitem" id="m-new">New Window<span class="k">⌘N</span></div>
   <div class="mitem" id="m-home">Home<span class="k">⌘H</span></div>
-  <div class="mitem off" title="coming in a later phase">Edit Document<span class="k">P2</span></div>
+  <div class="mitem" id="m-edit">Edit / Save<span class="k">⌘E</span></div>
   <div class="mitem off" title="coming in a later phase">Link to Marked<span class="k">P3</span></div>
   <div class="mitem" id="m-help">Help<span class="k">?</span></div>
 </div>
@@ -102,7 +104,7 @@
 //   P2: edit documents in place + save to the pod (the read-write turn).
 //   P3: the mark->link authoring workflow (make hypertext by hand, like the original).
 "use strict";
-var Z=10, WINS=[], desktop=document.body;
+var Z=10, WINS=[], FOCUSED=null, desktop=document.body;
 function me(){ return window.xlogin && window.xlogin.id; }
 function authFetch(u,o){ return ((window.xlogin && window.xlogin.authFetch)||fetch)(u,o); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
@@ -123,15 +125,23 @@ function makeWindow(opts){
       '<button class="b-fwd" title="Next" disabled>&gt;</button>'+
       '<input class="url" placeholder="Open URL (a pod resource, http(s)…)" spellcheck="false">'+
       '<button class="b-go">Go</button>'+
+      '<button class="b-edit" title="Edit this document" disabled>Edit</button>'+
+      '<button class="b-save" title="Save to your pod" style="display:none">Save</button>'+
+      '<button class="b-revert" title="Discard changes" style="display:none">Revert</button>'+
       '<button class="b-new" title="New window">New</button>'+
     '</div>'+
     '<div class="doc ntx-doc"></div><div class="resize"></div>';
   desktop.appendChild(el);
   w.el=el; w.titleEl=el.querySelector(".tb-title"); w.docEl=el.querySelector(".doc");
   w.urlEl=el.querySelector(".url"); w.backB=el.querySelector(".b-back"); w.fwdB=el.querySelector(".b-fwd");
+  w.editB=el.querySelector(".b-edit"); w.saveB=el.querySelector(".b-save"); w.revertB=el.querySelector(".b-revert");
+  w.mode="view"; w.kind=null; w.raw=null; w.sourceCT=null;
   el.addEventListener("mousedown",function(){ focusWin(w); });
   el.querySelector(".tb-close").addEventListener("click",function(e){ e.stopPropagation(); closeWin(w); });
   el.querySelector(".b-go").addEventListener("click",function(){ navigate(w, w.urlEl.value.trim()); });
+  w.editB.addEventListener("click",function(){ enterEdit(w); });
+  w.saveB.addEventListener("click",function(){ saveDoc(w); });
+  w.revertB.addEventListener("click",function(){ revertEdit(w); });
   el.querySelector(".b-new").addEventListener("click",function(){ var nw=makeWindow(); navigate(nw, w.url||homeUrl()); });
   w.urlEl.addEventListener("keydown",function(e){ if(e.key==="Enter") navigate(w, w.urlEl.value.trim()); });
   w.urlEl.addEventListener("mousedown",function(e){ e.stopPropagation(); });
@@ -142,7 +152,7 @@ function makeWindow(opts){
   WINS.push(w); focusWin(w);
   return w;
 }
-function focusWin(w){ WINS.forEach(function(o){ o.el.classList.add("blur"); }); w.el.classList.remove("blur"); w.el.style.zIndex=(++Z); }
+function focusWin(w){ FOCUSED=w; WINS.forEach(function(o){ o.el.classList.add("blur"); }); w.el.classList.remove("blur"); w.el.style.zIndex=(++Z); }
 function closeWin(w){ w.el.remove(); WINS=WINS.filter(function(o){return o!==w;}); }
 
 function dragify(w, handle){
@@ -175,6 +185,7 @@ function navigate(w, url){
   load(w, url);
 }
 function load(w, url){
+  w.mode="view"; w.docEl.contentEditable="false"; w.docEl.classList.remove("editing");
   if(url==="#about"){ renderAbout(w); w.url=url; setNavButtons(w); return; }
   w.url=url; w.urlEl.value=url; setNavButtons(w);
   w.docEl.classList.add("loading"); w.docEl.textContent="Reading "+url+" …"; w.titleEl.textContent="…";
@@ -190,11 +201,20 @@ function loadResource(w, url){
     return r.text().then(function(body){ return { ok:r.ok, status:r.status, ct:ct, body:body }; });
   }).then(function(res){
     w.docEl.classList.remove("loading");
-    if(!res.ok){ w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this document.</p>'; return; }
+    if(!res.ok){
+      if(res.status===404 && me()){   // offer to create a new document here (the read-write web)
+        var tmpl="<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>"+esc(shortTitle(url))+"</title></head>\n<body>\n<h1>"+esc(shortTitle(url))+"</h1>\n<p>New document.</p>\n</body></html>\n";
+        renderHTML(w, tmpl, url);
+        var note=document.createElement("p"); note.style.cssText="color:#777;font-style:italic";
+        note.textContent="This document doesn’t exist yet — click Edit, then Save to create it on your pod.";
+        w.docEl.appendChild(note); return;
+      }
+      w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this document.</p>'; w.kind=null; setEditUI(w); return;
+    }
     if(/text\/html|xhtml|xml/.test(res.ct) || /^\s*<(!doctype|html|head|body|h1|p|ul)/i.test(res.body)){
       renderHTML(w, res.body, url);
     } else {
-      renderSource(w, url, res.body);   // data resource (turtle/json-ld/text) — source, with links live
+      renderSource(w, url, res.body, res.ct);   // data resource (turtle/json-ld/text) — source, with links live
     }
   }).catch(function(){ unreachable(w); });
 }
@@ -202,12 +222,13 @@ function loadResource(w, url){
 // ---- LDP container -> clickable WWW-style index ----
 function loadContainer(w, url){
   authFetch(url,{headers:{Accept:"application/ld+json"}}).then(function(r){
-    return r.text().then(function(body){ return { ok:r.ok, status:r.status, body:body }; });
+    var ct=(r.headers.get("content-type")||"").toLowerCase();
+    return r.text().then(function(body){ return { ok:r.ok, status:r.status, ct:ct, body:body }; });
   }).then(function(res){
     w.docEl.classList.remove("loading");
-    if(!res.ok){ w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this container.</p>'; return; }
+    if(!res.ok){ w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this container.</p>'; w.kind=null; setEditUI(w); return; }
     var data=tryJSON(res.body), items=data?containerChildren(data,url):null;
-    if(items) renderContainer(w, url, items); else renderSource(w, url, res.body);
+    if(items) renderContainer(w, url, items); else renderSource(w, url, res.body, res.ct);
   }).catch(function(){ unreachable(w); });
 }
 function tryJSON(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
@@ -236,6 +257,7 @@ function containerChildren(data, url){
 }
 function fmtSize(b){ b=+b; if(!b&&b!==0)return ""; if(b<1024)return b+" B"; if(b<1048576)return (b/1024).toFixed(1)+" KB"; return (b/1048576).toFixed(1)+" MB"; }
 function renderContainer(w, url, items){
+  w.kind="container"; w.raw=null;
   var name=childName(url.replace(/\/$/,"")+"/", parentUrl(url)||url)||shortTitle(url);
   w.titleEl.textContent=name||"Index";
   var parent=parentUrl(url);
@@ -251,7 +273,7 @@ function renderContainer(w, url, items){
   w.docEl.querySelectorAll("a[href]").forEach(function(a){
     a.addEventListener("click",function(e){ e.preventDefault(); navigate(w, a.getAttribute("href")); });
   });
-  w.docEl.scrollTop=0;
+  w.docEl.scrollTop=0; setEditUI(w);
 }
 
 // data resource as source, but with any URLs live (the whole pod stays click-through)
@@ -260,17 +282,19 @@ function linkifySource(text){
   while((m=re.exec(text))){ out+=esc(text.slice(last,m.index))+'<a href="'+esc(m[1])+'">'+esc(m[1])+'</a>'; last=re.lastIndex; }
   return out+esc(text.slice(last));
 }
-function renderSource(w, url, body){
+function renderSource(w, url, body, ct){
+  w.kind="source"; w.raw=body; w.sourceCT=ct||w.sourceCT||"text/plain";
   w.titleEl.textContent=shortTitle(url);
   w.docEl.innerHTML='<pre style="font-family:NeXTMono,Courier,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;">'+linkifySource(body)+'</pre>';
   w.docEl.querySelectorAll("a[href]").forEach(function(a){
-    a.addEventListener("click",function(e){ e.preventDefault(); navigate(w, a.getAttribute("href")); });
+    a.addEventListener("click",function(e){ if(w.mode==="edit")return; e.preventDefault(); navigate(w, a.getAttribute("href")); });
   });
-  w.docEl.scrollTop=0;
+  w.docEl.scrollTop=0; setEditUI(w);
 }
 function shortTitle(url){ try{ var u=new URL(url); var p=u.pathname.replace(/\/$/,"").split("/").pop(); return p||u.hostname; }catch(e){ return url; } }
 
 function renderHTML(w, html, base){
+  w.kind="html"; w.raw=html;   // keep the original source so Save can preserve <head>
   var doc;
   try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ doc=null; }
   if(!doc){ w.docEl.textContent=html; return; }
@@ -282,14 +306,15 @@ function renderHTML(w, html, base){
   var title=(doc.querySelector("title")&&doc.querySelector("title").textContent.trim())||shortTitle(base);
   w.titleEl.textContent=title;
   w.docEl.innerHTML = doc.body ? doc.body.innerHTML : html;
-  // intercept link clicks -> navigate within this window (the WWW way)
+  // intercept link clicks -> navigate within this window (the WWW way); inert while editing
   w.docEl.querySelectorAll("a[href]").forEach(function(a){
-    a.addEventListener("click",function(e){ e.preventDefault(); var href=a.getAttribute("href"); if(href) navigate(w, href); });
+    a.addEventListener("click",function(e){ if(w.mode==="edit")return; e.preventDefault(); var href=a.getAttribute("href"); if(href) navigate(w, href); });
   });
-  w.docEl.scrollTop=0;
+  w.docEl.scrollTop=0; setEditUI(w);
 }
 
 function renderAbout(w){
+  w.kind="about"; w.raw=null; w.mode="view"; w.docEl.contentEditable="false";
   w.titleEl.textContent="Welcome to Nexus";
   w.urlEl.value="";
   w.docEl.classList.remove("loading");
@@ -305,14 +330,61 @@ function renderAbout(w){
       '<li><b>New</b> opens another window. Drag title bars to move; drag the corner to resize.</li>'+
       '<li><b>&lt;</b> / <b>&gt;</b> walk back and forward through what you\'ve visited.</li>'+
     '</ul>'+
+    '<h2>Editing — the read-write web</h2>'+
+    '<ul>'+
+      '<li>On any HTML document you can write to, hit <b>Edit</b> (or ⌘E), change the text, then <b>Save</b> — it\'s written straight back to your pod.</li>'+
+      '<li>Open a URL that doesn\'t exist yet on your pod and nexus offers to <b>create</b> it.</li>'+
+      '<li>Data resources (Turtle, JSON-LD) are editable as source too.</li>'+
+    '</ul>'+
     '<h2>Coming next</h2>'+
-    '<p>The original could <i>edit</i> documents and <i>make links by hand</i> — the read-write web. '+
-    'That\'s Phase 2 (edit &amp; save to your pod) and Phase 3 (mark &rarr; link).</p>'+
+    '<p>Phase 3: <i>making links by hand</i> — mark a selection, navigate, &ldquo;Link to marked&rdquo; — authoring hypertext the way the original did.</p>'+
     (me()?'<p>You\'re signed in. <a href="'+esc(homeUrl())+'">Open your pod &rarr;</a></p>'
          :'<p><i>Sign in with the login pill to browse your own pod read-write.</i></p>');
   w.docEl.querySelectorAll("a[href]").forEach(function(a){
     a.addEventListener("click",function(e){ e.preventDefault(); navigate(w, a.getAttribute("href")); });
   });
+  setEditUI(w);
+}
+
+// ---- edit in place + save to the pod (the read-write turn) ----
+function setEditUI(w){
+  var editable=(w.kind==="html"||w.kind==="source");
+  if(w.editB){ w.editB.style.display=(w.mode==="edit")?"none":""; w.editB.disabled=!editable; }
+  if(w.saveB) w.saveB.style.display=(w.mode==="edit")?"":"none";
+  if(w.revertB) w.revertB.style.display=(w.mode==="edit")?"":"none";
+  w.docEl.classList.toggle("editing", w.mode==="edit");
+}
+function enterEdit(w){
+  if(!(w.kind==="html"||w.kind==="source"))return;
+  if(w.kind==="source"){   // plain editable text surface (no live links while editing)
+    var pre=document.createElement("pre");
+    pre.style.cssText="font-family:NeXTMono,Courier,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;";
+    pre.textContent=w.raw||""; w.docEl.innerHTML=""; w.docEl.appendChild(pre);
+  }
+  w.mode="edit"; w.docEl.contentEditable="true"; setEditUI(w); w.docEl.focus();
+}
+function revertEdit(w){ w.mode="view"; w.docEl.contentEditable="false"; load(w, w.url); }
+function flashTitle(w, msg){ var t=w.titleEl.textContent; w.titleEl.textContent=msg; setTimeout(function(){ if(w.titleEl.textContent===msg) w.titleEl.textContent=t; },1900); }
+function saveDoc(w){
+  if(w.mode!=="edit") return;
+  var body, ct;
+  if(w.kind==="html"){
+    var src; try{ src=new DOMParser().parseFromString(w.raw||"<!doctype html><html><head></head><body></body></html>","text/html"); }catch(e){ src=null; }
+    if(!src||!src.body) src=document.implementation.createHTMLDocument("");
+    src.body.innerHTML=w.docEl.innerHTML;   // swap edited body into the original document (keeps <head>/<title>)
+    if(!src.querySelector("title")){ var ti=src.createElement("title"); ti.textContent=w.titleEl.textContent||shortTitle(w.url); (src.head||src.documentElement).appendChild(ti); }
+    body="<!doctype html>\n"+src.documentElement.outerHTML; ct="text/html";
+  } else {
+    body=w.docEl.innerText; ct=w.sourceCT||"text/plain";
+  }
+  var btn=w.saveB, old=btn.textContent; btn.disabled=true; btn.textContent="Saving…";
+  authFetch(w.url,{ method:"PUT", headers:{"Content-Type":ct}, body:body }).then(function(r){
+    btn.disabled=false; btn.textContent=old;
+    if(!r.ok){ flashTitle(w,(r.status===403||r.status===401)?"No write access":("Save failed "+r.status)); return; }
+    w.mode="view"; w.docEl.contentEditable="false"; w.raw=body;
+    if(w.kind==="html") renderHTML(w, body, w.url); else renderSource(w, w.url, body, ct);
+    flashTitle(w,"Saved ✓");
+  }).catch(function(){ btn.disabled=false; btn.textContent=old; flashTitle(w,"Save failed (network)"); });
 }
 
 // ---- menu ----
@@ -320,10 +392,13 @@ document.getElementById("m-open").onclick=function(){ var w=WINS[WINS.length-1]|
 document.getElementById("m-new").onclick=function(){ var w=makeWindow(); navigate(w, homeUrl()); };
 document.getElementById("m-home").onclick=function(){ var w=makeWindow(); navigate(w, homeUrl()); };
 document.getElementById("m-help").onclick=function(){ var w=makeWindow(); renderAbout(w); };
+document.getElementById("m-edit").onclick=function(){ var w=FOCUSED||WINS[WINS.length-1]; if(!w)return; if(w.mode==="edit")saveDoc(w); else enterEdit(w); };
 document.addEventListener("keydown",function(e){
   if(!(e.metaKey||e.ctrlKey))return; var k=e.key.toLowerCase();
   if(k==="n"){ e.preventDefault(); var w=makeWindow(); navigate(w, homeUrl()); }
   else if(k==="o"){ e.preventDefault(); var w2=WINS[WINS.length-1]||makeWindow(); focusWin(w2); w2.urlEl.focus(); }
+  else if(k==="e"){ var we=FOCUSED||WINS[WINS.length-1]; if(we&&(we.kind==="html"||we.kind==="source")){ e.preventDefault(); we.mode==="edit"?saveDoc(we):enterEdit(we); } }
+  else if(k==="s"){ var ws=FOCUSED||WINS[WINS.length-1]; if(ws&&ws.mode==="edit"){ e.preventDefault(); saveDoc(ws); } }
 });
 
 // ---- boot: open the home / about window ----
