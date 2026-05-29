@@ -1,0 +1,46 @@
+# nexus
+
+A faithful recreation of **WorldWideWeb** — Tim Berners-Lee's 1990 browser on the
+NeXT (the one he renamed *Nexus* so people wouldn't confuse the app with the Web
+itself) — rebuilt as a window manager over **your own pod**. One self-contained
+HTML file, no build, signs in with the universal **xlogin** pill.
+
+WorldWideWeb wasn't just the first browser — it was a browser **and an editor**:
+the **read-write web**. That's exactly what [Solid](https://solidproject.org) is
+bringing back, so `nexus` is built to grow into the real thing, in phases.
+
+## Faithful by source, not by eyeballing
+
+- **NeXTSTEP chrome** — draggable, resizable grey windows on the teal workspace,
+  beveled toolbars, the floating top-left menu. Modelled on CERN's 2019
+  [recreation](https://worldwideweb.cern.ch/browser/).
+- **Real WWW typography** — the genuine NeXT webfonts, self-hosted (~74KB total).
+- **Tim's actual rendering** — documents are styled from his 1991 `default.style`
+  (`H1` Helvetica-Bold 18, `H2` 14, `H3` Helvetica-Oblique 14, `address`
+  oblique 12, …), and links are drawn **boxed + underlined** as they were in 1990.
+
+## Phase 1 (this) — browse your pod
+
+- Open any URL in a window (a pod resource, or any readable web page) and read it
+  in true WorldWideWeb style.
+- **Click boxed links** to follow them; **&lt;** / **&gt;** walk your history.
+- **New** spawns another window; drag title bars to move, drag the corner to size.
+- HTML renders faithfully; other resources (Turtle, JSON-LD, text) show as source.
+- Scripts/styles in fetched pages are stripped — nexus draws the document, the
+  page can't take over the chrome.
+
+Cross-origin pages may refuse reads (CORS); **your own pod always works**.
+
+## Later phases
+
+- **P2 — edit in place**: make the document `contentEditable` and **save back to
+  the pod** (PUT). The read-write turn.
+- **P3 — mark → link**: the original's signature move — *mark* a selection,
+  navigate elsewhere, **Link to marked**, and nexus writes the anchor and saves.
+  Authoring hypertext by hand, on your pod.
+
+## Run
+
+Static — open `index.html`, or install via the **store** to `/public/apps/nexus/`.
+
+AGPL-3.0-only.

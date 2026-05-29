@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nexus</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.json">
+<style>
+  /* Self-hosted NeXT fonts (the real WorldWideWeb typography, ~74KB total). */
+  @font-face{ font-family:NeXT; src:url("fonts/next-regular.woff2") format("woff2"); font-weight:normal; font-style:normal; font-display:swap; }
+  @font-face{ font-family:NeXT; src:url("fonts/next-bold.woff2") format("woff2"); font-weight:bold; font-style:normal; font-display:swap; }
+  @font-face{ font-family:NeXT; src:url("fonts/next-oblique.woff2") format("woff2"); font-weight:normal; font-style:italic; font-display:swap; }
+  @font-face{ font-family:NeXTHead; src:url("fonts/next-headline.woff2") format("woff2"); font-weight:bold; font-style:normal; font-display:swap; }
+  @font-face{ font-family:NeXTMono; src:url("fonts/next-mono.woff2") format("woff2"); font-display:swap; }
+
+  :root{ --steel:#9a9a9a; --win:#fff; --chrome:#bcbcbc; --chrome-d:#8a8a8a; --ink:#111; --line:#555; --sel:#aaddee; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{ font-family:NeXT,Helvetica,Arial,sans-serif; color:var(--ink);
+        background:#5e8585; /* NeXTSTEP teal workspace */
+        background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.04) 0 2px,transparent 2px 4px);
+        overflow:hidden; user-select:none; -webkit-user-select:none; }
+
+  /* ---- floating NeXT menu (top-left vertical menu) ---- */
+  #menu{ position:fixed; top:8px; left:8px; width:150px; z-index:90; font-size:13px; }
+  .mtitle{ background:var(--chrome); border:1px solid var(--line); border-bottom:0;
+           text-align:center; font-weight:bold; padding:3px; box-shadow:inset 1px 1px 0 #fff, inset -1px -1px 0 var(--chrome-d); }
+  .mitem{ background:var(--chrome); border:1px solid var(--line); border-top:0; padding:4px 8px; cursor:pointer;
+          display:flex; justify-content:space-between; box-shadow:inset 1px 0 0 #fff, inset -1px -1px 0 var(--chrome-d); }
+  .mitem:hover{ background:#000; color:#fff; }
+  .mitem.off{ color:#777; cursor:default; }
+  .mitem.off:hover{ background:var(--chrome); color:#777; }
+  .mitem .k{ color:#666; } .mitem:hover .k{ color:#ccc; }
+
+  /* ---- windows ---- */
+  .win{ position:absolute; background:var(--win); border:1px solid #000;
+        box-shadow:2px 2px 0 rgba(0,0,0,.35); display:flex; flex-direction:column; min-width:240px; min-height:140px; }
+  .titlebar{ height:22px; background:linear-gradient(#cfcfcf,#aeaeae); border-bottom:1px solid var(--line);
+             display:flex; align-items:center; cursor:move;
+             box-shadow:inset 0 1px 0 #fff; }
+  .titlebar .tb-close{ width:16px; height:14px; margin:0 4px; background:linear-gradient(#e6e6e6,#c2c2c2);
+             border:1px solid var(--line); box-shadow:inset 1px 1px 0 #fff; cursor:pointer; flex:0 0 auto; }
+  .titlebar .tb-close:active{ background:#888; }
+  .titlebar .tb-title{ flex:1; text-align:center; font-weight:bold; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:24px; }
+  .win.blur .titlebar{ background:#cfcfcf; }
+  .win.blur .titlebar .tb-title{ color:#777; }
+
+  .toolbar{ display:flex; gap:4px; align-items:center; padding:4px; background:var(--chrome); border-bottom:1px solid var(--line); }
+  .toolbar button{ font-family:inherit; font-size:12px; background:linear-gradient(#eaeaea,#cccccc); border:1px solid var(--line);
+                   box-shadow:inset 1px 1px 0 #fff, inset -1px -1px 0 var(--chrome-d); padding:2px 7px; cursor:pointer; }
+  .toolbar button:active{ background:#999; box-shadow:inset -1px -1px 0 #fff; }
+  .toolbar button:disabled{ color:#888; box-shadow:none; cursor:default; background:#cfcfcf; }
+  .toolbar .url{ flex:1; font-family:NeXTMono,Courier,monospace; font-size:12px; border:1px solid var(--line);
+                 box-shadow:inset 1px 1px 0 var(--chrome-d); padding:2px 5px; min-width:60px; user-select:text; }
+
+  .doc{ flex:1; overflow:auto; background:var(--win); padding:10px 14px; user-select:text; }
+  .doc.loading{ color:#777; font-style:italic; }
+
+  .resize{ position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:nwse-resize;
+           background:linear-gradient(135deg,transparent 45%,var(--chrome-d) 45% 55%,transparent 55%); }
+
+  /* ---- faithful WorldWideWeb document rendering (Tim's default.style, 1991) ---- */
+  .ntx-doc{ font-family:NeXT,Helvetica,Arial,sans-serif; font-size:12px; line-height:1.35; color:#000; }
+  .ntx-doc p, .ntx-doc div, .ntx-doc span{ font-size:12px; }
+  .ntx-doc h1{ font-family:NeXTHead,NeXT,Helvetica,sans-serif; font-weight:bold; font-size:18px; margin:.5em 0; }
+  .ntx-doc h2{ font-weight:bold; font-size:14px; margin:.5em 0; }
+  .ntx-doc h3{ font-style:italic; font-size:14px; margin:.5em 0; }
+  .ntx-doc h4{ font-weight:bold; font-size:12px; margin:.5em 0; }
+  .ntx-doc h5{ font-weight:bold; font-style:italic; font-size:12px; margin:.5em 0; }
+  .ntx-doc h6{ font-weight:bold; font-size:12px; margin:.5em 0; }
+  .ntx-doc address{ font-style:italic; font-size:12px; }
+  .ntx-doc pre, .ntx-doc code, .ntx-doc tt{ font-family:NeXTMono,Courier,monospace; font-size:12px; }
+  .ntx-doc ul, .ntx-doc ol, .ntx-doc dl{ margin:.4em 0 .4em 1.2em; }
+  .ntx-doc img{ max-width:100%; }
+  /* WorldWideWeb drew links as a boxed, underlined region */
+  .ntx-doc a{ color:#000; text-decoration:underline; border:1px solid #000; padding:0 1px; cursor:pointer; }
+  .ntx-doc a:hover{ background:var(--sel); }
+
+  #hint{ position:fixed; right:8px; bottom:6px; z-index:80; color:#eafafa; font-size:11px; opacity:.85; }
+  #hint a{ color:#fff; }
+</style>
+</head>
+<body>
+<div id="menu">
+  <div class="mtitle">WorldWideWeb</div>
+  <div class="mitem" id="m-open">Open…<span class="k">⌘O</span></div>
+  <div class="mitem" id="m-new">New Window<span class="k">⌘N</span></div>
+  <div class="mitem" id="m-home">Home<span class="k">⌘H</span></div>
+  <div class="mitem off" title="coming in a later phase">Edit Document<span class="k">P2</span></div>
+  <div class="mitem off" title="coming in a later phase">Link to Marked<span class="k">P3</span></div>
+  <div class="mitem" id="m-help">Help<span class="k">?</span></div>
+</div>
+<div id="hint">Nexus · the read-write web · <a href="../../../">↑ root</a></div>
+
+<script src="https://unpkg.com/xlogin"></script>
+<script>
+// Nexus - a faithful recreation of Tim Berners-Lee's 1990 WorldWideWeb browser
+// (the NeXT app, later renamed "Nexus"), as a window manager over YOUR pod.
+// Carbon-copy of the NeXTSTEP chrome + real WWW typography (Tim's default.style).
+//   P1 (this): browse - open a URL, render faithfully, boxed links, Back/Next, multi-window.
+//   P2: edit documents in place + save to the pod (the read-write turn).
+//   P3: the mark->link authoring workflow (make hypertext by hand, like the original).
+"use strict";
+var Z=10, WINS=[], desktop=document.body;
+function me(){ return window.xlogin && window.xlogin.id; }
+function authFetch(u,o){ return ((window.xlogin && window.xlogin.authFetch)||fetch)(u,o); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+function podRoot(){ var x=window.xlogin; if(!x||!x.id)return null; return String(x.id).replace(/#.*$/,"").replace(/\/profile\/card$|\/[^\/]*$/,""); }
+function homeUrl(){ var r=podRoot(); return r?r+"/":(location.href.replace(/[^\/]*$/,"")+"#about"); }
+
+// ---- window model ----
+function makeWindow(opts){
+  opts=opts||{};
+  var w={ id:"w"+(WINS.length+1)+"-"+Date.now(), url:null, hist:[], hi:-1,
+          x:opts.x||(40+WINS.length*26), y:opts.y||(40+WINS.length*26), w:opts.w||560, h:opts.h||420 };
+  var el=document.createElement("div"); el.className="win"; el.style.cssText=
+    "left:"+w.x+"px;top:"+w.y+"px;width:"+w.w+"px;height:"+w.h+"px;z-index:"+(++Z);
+  el.innerHTML=
+    '<div class="titlebar"><div class="tb-close" title="Close"></div><div class="tb-title">Document</div></div>'+
+    '<div class="toolbar">'+
+      '<button class="b-back" title="Back" disabled>&lt;</button>'+
+      '<button class="b-fwd" title="Next" disabled>&gt;</button>'+
+      '<input class="url" placeholder="Open URL (a pod resource, http(s)…)" spellcheck="false">'+
+      '<button class="b-go">Go</button>'+
+      '<button class="b-new" title="New window">New</button>'+
+    '</div>'+
+    '<div class="doc ntx-doc"></div><div class="resize"></div>';
+  desktop.appendChild(el);
+  w.el=el; w.titleEl=el.querySelector(".tb-title"); w.docEl=el.querySelector(".doc");
+  w.urlEl=el.querySelector(".url"); w.backB=el.querySelector(".b-back"); w.fwdB=el.querySelector(".b-fwd");
+  el.addEventListener("mousedown",function(){ focusWin(w); });
+  el.querySelector(".tb-close").addEventListener("click",function(e){ e.stopPropagation(); closeWin(w); });
+  el.querySelector(".b-go").addEventListener("click",function(){ navigate(w, w.urlEl.value.trim()); });
+  el.querySelector(".b-new").addEventListener("click",function(){ var nw=makeWindow(); navigate(nw, w.url||homeUrl()); });
+  w.urlEl.addEventListener("keydown",function(e){ if(e.key==="Enter") navigate(w, w.urlEl.value.trim()); });
+  w.urlEl.addEventListener("mousedown",function(e){ e.stopPropagation(); });
+  w.backB.addEventListener("click",function(){ go(w,-1); });
+  w.fwdB.addEventListener("click",function(){ go(w,1); });
+  dragify(w, el.querySelector(".titlebar"));
+  resizify(w, el.querySelector(".resize"));
+  WINS.push(w); focusWin(w);
+  return w;
+}
+function focusWin(w){ WINS.forEach(function(o){ o.el.classList.add("blur"); }); w.el.classList.remove("blur"); w.el.style.zIndex=(++Z); }
+function closeWin(w){ w.el.remove(); WINS=WINS.filter(function(o){return o!==w;}); }
+
+function dragify(w, handle){
+  handle.addEventListener("mousedown",function(e){
+    if(e.target.classList.contains("tb-close"))return;
+    focusWin(w); var sx=e.clientX-w.x, sy=e.clientY-w.y;
+    function mv(ev){ w.x=Math.max(0,ev.clientX-sx); w.y=Math.max(0,ev.clientY-sy); w.el.style.left=w.x+"px"; w.el.style.top=w.y+"px"; }
+    function up(){ document.removeEventListener("mousemove",mv); document.removeEventListener("mouseup",up); }
+    document.addEventListener("mousemove",mv); document.addEventListener("mouseup",up); e.preventDefault();
+  });
+}
+function resizify(w, grip){
+  grip.addEventListener("mousedown",function(e){
+    e.stopPropagation(); focusWin(w); var sw=w.w, sh=w.h, sx=e.clientX, sy=e.clientY;
+    function mv(ev){ w.w=Math.max(240,sw+ev.clientX-sx); w.h=Math.max(140,sh+ev.clientY-sy); w.el.style.width=w.w+"px"; w.el.style.height=w.h+"px"; }
+    function up(){ document.removeEventListener("mousemove",mv); document.removeEventListener("mouseup",up); }
+    document.addEventListener("mousemove",mv); document.addEventListener("mouseup",up); e.preventDefault();
+  });
+}
+
+// ---- navigation ----
+function setNavButtons(w){ w.backB.disabled=(w.hi<=0); w.fwdB.disabled=(w.hi>=w.hist.length-1); }
+function go(w,delta){ var i=w.hi+delta; if(i<0||i>=w.hist.length)return; w.hi=i; load(w, w.hist[i]); }
+function navigate(w, url){
+  if(!url) return;
+  if(url.indexOf("#about")>=0 || url==="#about"){ renderAbout(w); w.url="#about"; w.urlEl.value=""; w.hist=w.hist.slice(0,w.hi+1); w.hist.push("#about"); w.hi=w.hist.length-1; setNavButtons(w); return; }
+  // resolve relative to current doc
+  try{ url=new URL(url, w.url&&w.url!=="#about"?w.url:location.href).href; }catch(e){}
+  w.hist=w.hist.slice(0,w.hi+1); w.hist.push(url); w.hi=w.hist.length-1;
+  load(w, url);
+}
+function load(w, url){
+  if(url==="#about"){ renderAbout(w); w.url=url; setNavButtons(w); return; }
+  w.url=url; w.urlEl.value=url; setNavButtons(w);
+  w.docEl.classList.add("loading"); w.docEl.textContent="Reading "+url+" …"; w.titleEl.textContent="…";
+  authFetch(url,{headers:{Accept:"text/html,application/xhtml+xml,*/*"}}).then(function(r){
+    var ct=(r.headers.get("content-type")||"").toLowerCase();
+    return r.text().then(function(body){ return { ok:r.ok, status:r.status, ct:ct, body:body }; });
+  }).then(function(res){
+    w.docEl.classList.remove("loading");
+    if(!res.ok){ w.titleEl.textContent="Error "+res.status; w.docEl.innerHTML='<h1>'+res.status+'</h1><p>Couldn\'t read this document.</p>'; return; }
+    if(/text\/html|xhtml|xml/.test(res.ct) || /^\s*<(!doctype|html|head|body|h1|p|ul)/i.test(res.body)){
+      renderHTML(w, res.body, url);
+    } else {
+      // non-HTML (turtle, json-ld, text) — show as monospace source, faithful to "view document"
+      w.titleEl.textContent=shortTitle(url);
+      var pre=document.createElement("pre"); pre.style.cssText="font-family:NeXTMono,Courier,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;";
+      pre.textContent=res.body; w.docEl.innerHTML=""; w.docEl.appendChild(pre);
+    }
+  }).catch(function(){
+    w.docEl.classList.remove("loading"); w.titleEl.textContent="Unreachable";
+    w.docEl.innerHTML='<h1>Unreachable</h1><p>Could not fetch this URL. If it\'s on another server it may block cross-origin reads (CORS). Your own pod works.</p>';
+  });
+}
+function shortTitle(url){ try{ var u=new URL(url); var p=u.pathname.replace(/\/$/,"").split("/").pop(); return p||u.hostname; }catch(e){ return url; } }
+
+function renderHTML(w, html, base){
+  var doc;
+  try{ doc=new DOMParser().parseFromString(html,"text/html"); }catch(e){ doc=null; }
+  if(!doc){ w.docEl.textContent=html; return; }
+  // remove anything executable/styling that could escape our chrome
+  doc.querySelectorAll("script,style,link,meta,iframe,object,embed,base").forEach(function(n){ n.remove(); });
+  // resolve links + images against the document's own URL
+  doc.querySelectorAll("a[href]").forEach(function(a){ try{ a.setAttribute("href", new URL(a.getAttribute("href"), base).href); }catch(e){} });
+  doc.querySelectorAll("img[src]").forEach(function(im){ try{ im.setAttribute("src", new URL(im.getAttribute("src"), base).href); }catch(e){} });
+  var title=(doc.querySelector("title")&&doc.querySelector("title").textContent.trim())||shortTitle(base);
+  w.titleEl.textContent=title;
+  w.docEl.innerHTML = doc.body ? doc.body.innerHTML : html;
+  // intercept link clicks -> navigate within this window (the WWW way)
+  w.docEl.querySelectorAll("a[href]").forEach(function(a){
+    a.addEventListener("click",function(e){ e.preventDefault(); var href=a.getAttribute("href"); if(href) navigate(w, href); });
+  });
+  w.docEl.scrollTop=0;
+}
+
+function renderAbout(w){
+  w.titleEl.textContent="Welcome to Nexus";
+  w.urlEl.value="";
+  w.docEl.classList.remove("loading");
+  w.docEl.innerHTML =
+    '<h1>WorldWideWeb</h1>'+
+    '<address>A recreation of the world\'s first browser — now over your own pod.</address>'+
+    '<p>This is <b>Nexus</b>: Tim Berners-Lee\'s 1990 <i>WorldWideWeb</i> browser, faithfully reborn '+
+    'on the NeXT, but pointed at <b>your data</b>. Open any document on your pod and follow its links.</p>'+
+    '<h2>Browsing</h2>'+
+    '<ul>'+
+      '<li>Type a URL in a window\'s bar and press <b>Go</b> — a pod resource, or any readable web page.</li>'+
+      '<li>Links are drawn <a href="#about">boxed and underlined</a>; click to follow them, like 1990.</li>'+
+      '<li><b>New</b> opens another window. Drag title bars to move; drag the corner to resize.</li>'+
+      '<li><b>&lt;</b> / <b>&gt;</b> walk back and forward through what you\'ve visited.</li>'+
+    '</ul>'+
+    '<h2>Coming next</h2>'+
+    '<p>The original could <i>edit</i> documents and <i>make links by hand</i> — the read-write web. '+
+    'That\'s Phase 2 (edit &amp; save to your pod) and Phase 3 (mark &rarr; link).</p>'+
+    (me()?'<p>You\'re signed in. <a href="'+esc(homeUrl())+'">Open your pod &rarr;</a></p>'
+         :'<p><i>Sign in with the login pill to browse your own pod read-write.</i></p>');
+  w.docEl.querySelectorAll("a[href]").forEach(function(a){
+    a.addEventListener("click",function(e){ e.preventDefault(); navigate(w, a.getAttribute("href")); });
+  });
+}
+
+// ---- menu ----
+document.getElementById("m-open").onclick=function(){ var w=WINS[WINS.length-1]||makeWindow(); focusWin(w); w.urlEl.focus(); w.urlEl.select(); };
+document.getElementById("m-new").onclick=function(){ var w=makeWindow(); navigate(w, homeUrl()); };
+document.getElementById("m-home").onclick=function(){ var w=makeWindow(); navigate(w, homeUrl()); };
+document.getElementById("m-help").onclick=function(){ var w=makeWindow(); renderAbout(w); };
+document.addEventListener("keydown",function(e){
+  if(!(e.metaKey||e.ctrlKey))return; var k=e.key.toLowerCase();
+  if(k==="n"){ e.preventDefault(); var w=makeWindow(); navigate(w, homeUrl()); }
+  else if(k==="o"){ e.preventDefault(); var w2=WINS[WINS.length-1]||makeWindow(); focusWin(w2); w2.urlEl.focus(); }
+});
+
+// ---- boot: open the home / about window ----
+function boot(){ var w=makeWindow({x:200,y:60}); if(me()) navigate(w, homeUrl()); else renderAbout(w); }
+document.addEventListener("xlogin",function(){ /* keep current windows; user can open pod */ });
+boot();
+</script>
+</body>
+</html>

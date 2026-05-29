@@ -1,0 +1,14 @@
+{
+  "name": "Nexus",
+  "short_name": "nexus",
+  "description": "A faithful recreation of Tim Berners-Lee's 1990 WorldWideWeb browser — NeXT chrome, real WWW typography — but over your own pod. The read-write web reborn.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#5e8585",
+  "theme_color": "#5e8585",
+  "handles": ["url"],
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
